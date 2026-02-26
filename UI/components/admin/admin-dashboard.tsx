@@ -1,24 +1,69 @@
-"use client"
-
-import { mockPGs, mockRooms, mockTickets, mockInvoices, mockTenants } from "@/lib/mock-data"
-import { Building2, BedDouble, Users, TicketCheck, TrendingUp, AlertCircle } from "lucide-react"
+import { useState, useEffect } from "react"
+import { api } from "@/lib/api"
+import { Building2, BedDouble, Users, TicketCheck, TrendingUp, AlertCircle, Loader2 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 
 export function AdminDashboard() {
-  const totalRooms = mockPGs.reduce((sum, pg) => sum + pg.totalRooms, 0)
-  const occupiedRooms = mockPGs.reduce((sum, pg) => sum + pg.occupiedRooms, 0)
-  const occupancyRate = Math.round((occupiedRooms / totalRooms) * 100)
-  const openTickets = mockTickets.filter((t) => t.status === "open" || t.status === "in-progress").length
-  const overdueInvoices = mockInvoices.filter((i) => i.status === "overdue").length
-  const totalTenants = mockTenants.filter((t) => t.status === "active").length
+  const [summary, setSummary] = useState<any>(null)
+  const [pgs, setPgs] = useState<any[]>([])
+  const [recentTickets, setRecentTickets] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        setLoading(true)
+        const [sumData, pgsData, ticketsData] = await Promise.all([
+          api.dashboard.summary(),
+          api.dashboard.pgsOverview(),
+          api.tickets.list({ status: "open" })
+        ])
+        setSummary(sumData)
+        setPgs(pgsData)
+        setRecentTickets(ticketsData.slice(0, 4))
+        setError(null)
+      } catch (err: any) {
+        console.error("Dashboard fetch error:", err)
+        setError("Failed to load dashboard data. Please try again.")
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchData()
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="flex h-[400px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2 text-muted-foreground">Loading dashboard...</span>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex h-[400px] flex-col items-center justify-center space-y-4">
+        <AlertCircle className="h-12 w-12 text-destructive" />
+        <p className="text-lg font-medium text-foreground">{error}</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="rounded-md bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90"
+        >
+          Retry
+        </button>
+      </div>
+    )
+  }
 
   const summaryCards = [
-    { title: "Total PGs", value: mockPGs.length, icon: Building2, color: "text-primary" },
-    { title: "Total Rooms", value: totalRooms, icon: BedDouble, color: "text-chart-2" },
-    { title: "Active Tenants", value: totalTenants, icon: Users, color: "text-chart-4" },
-    { title: "Open Tickets", value: openTickets, icon: TicketCheck, color: "text-chart-5" },
+    { title: "Total PGs", value: summary.total_pgs, icon: Building2, color: "text-primary" },
+    { title: "Total Rooms", value: summary.total_rooms, icon: BedDouble, color: "text-chart-2" },
+    { title: "Active Tenants", value: summary.active_tenants, icon: Users, color: "text-chart-4" },
+    { title: "Open Tickets", value: summary.open_tickets, icon: TicketCheck, color: "text-chart-5" },
   ]
 
   return (
@@ -51,13 +96,13 @@ export function AdminDashboard() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-end gap-2">
-              <span className="text-4xl font-bold text-foreground">{occupancyRate}%</span>
+              <span className="text-4xl font-bold text-foreground">{summary.occupancy_rate}%</span>
               <span className="mb-1 text-sm text-muted-foreground">occupied</span>
             </div>
-            <Progress value={occupancyRate} className="h-3" />
+            <Progress value={summary.occupancy_rate} className="h-3" />
             <div className="flex justify-between text-sm text-muted-foreground">
-              <span>{occupiedRooms} occupied</span>
-              <span>{totalRooms - occupiedRooms} vacant</span>
+              <span>{summary.occupied_rooms} occupied</span>
+              <span>{summary.vacant_rooms} vacant</span>
             </div>
           </CardContent>
         </Card>
@@ -72,15 +117,15 @@ export function AdminDashboard() {
           <CardContent className="space-y-3">
             <div className="flex items-center justify-between rounded-lg bg-destructive/10 p-3">
               <span className="text-sm font-medium text-foreground">Overdue Invoices</span>
-              <Badge variant="destructive">{overdueInvoices}</Badge>
+              <Badge variant="destructive">{summary.overdue_invoices}</Badge>
             </div>
             <div className="flex items-center justify-between rounded-lg bg-warning/10 p-3">
               <span className="text-sm font-medium text-foreground">Open Tickets</span>
-              <Badge className="bg-warning text-warning-foreground">{openTickets}</Badge>
+              <Badge className="bg-warning text-warning-foreground">{summary.open_tickets}</Badge>
             </div>
             <div className="flex items-center justify-between rounded-lg bg-secondary p-3">
               <span className="text-sm font-medium text-foreground">Rooms in Maintenance</span>
-              <Badge variant="secondary">{mockRooms.filter((r) => r.status === "maintenance").length}</Badge>
+              <Badge variant="secondary">{summary.maintenance_rooms}</Badge>
             </div>
           </CardContent>
         </Card>
@@ -93,8 +138,7 @@ export function AdminDashboard() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {mockPGs.map((pg) => {
-              const rate = Math.round((pg.occupiedRooms / pg.totalRooms) * 100)
+            {pgs.map((pg) => {
               return (
                 <div key={pg.id} className="flex flex-col gap-3 rounded-lg border border-border p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
@@ -103,24 +147,25 @@ export function AdminDashboard() {
                   </div>
                   <div className="flex flex-wrap items-center gap-4">
                     <div className="text-center">
-                      <p className="text-lg font-bold text-foreground">{pg.totalRooms}</p>
+                      <p className="text-lg font-bold text-foreground">{pg.total_rooms}</p>
                       <p className="text-xs text-muted-foreground">Rooms</p>
                     </div>
                     <div className="text-center">
-                      <p className="text-lg font-bold text-foreground">{pg.occupiedBeds}/{pg.totalBeds}</p>
+                      <p className="text-lg font-bold text-foreground">{pg.occupied_beds}/{pg.total_beds}</p>
                       <p className="text-xs text-muted-foreground">Beds</p>
                     </div>
                     <div className="w-24">
                       <div className="mb-1 flex justify-between text-xs">
                         <span className="text-muted-foreground">Occupancy</span>
-                        <span className="font-medium text-foreground">{rate}%</span>
+                        <span className="font-medium text-foreground">{pg.occupancy_rate}%</span>
                       </div>
-                      <Progress value={rate} className="h-2" />
+                      <Progress value={pg.occupancy_rate} className="h-2" />
                     </div>
                   </div>
                 </div>
               )
             })}
+            {pgs.length === 0 && <p className="text-center text-muted-foreground py-4">No properties found.</p>}
           </div>
         </CardContent>
       </Card>
@@ -132,18 +177,18 @@ export function AdminDashboard() {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {mockTickets.slice(0, 4).map((ticket) => (
+            {recentTickets.map((ticket) => (
               <div key={ticket.id} className="flex items-center justify-between rounded-lg border border-border p-3">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-foreground">{ticket.subject}</p>
                   <p className="text-xs text-muted-foreground">
-                    {ticket.tenantName} - Room {ticket.roomNumber}
+                    {ticket.tenant_name} - Room {ticket.room_number || "N/A"}
                   </p>
                 </div>
                 <div className="ml-3 flex items-center gap-2">
                   <Badge variant={
                     ticket.priority === "high" ? "destructive" :
-                    ticket.priority === "medium" ? "default" : "secondary"
+                      ticket.priority === "medium" ? "default" : "secondary"
                   }>
                     {ticket.priority}
                   </Badge>
@@ -151,6 +196,7 @@ export function AdminDashboard() {
                 </div>
               </div>
             ))}
+            {recentTickets.length === 0 && <p className="text-center text-muted-foreground py-4">No recent tickets.</p>}
           </div>
         </CardContent>
       </Card>

@@ -1,9 +1,7 @@
-"use client"
-
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useAuth } from "@/lib/auth-context"
-import { mockInvoices, type Invoice } from "@/lib/mock-data"
-import { FileText, Download } from "lucide-react"
+import { api } from "@/lib/api"
+import { FileText, Download, Loader2, AlertCircle } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -12,12 +10,33 @@ import { Separator } from "@/components/ui/separator"
 
 export function TenantInvoices() {
   const { user } = useAuth()
-  const tenantId = user?.id || "tenant-1"
-  const invoices = mockInvoices.filter((i) => i.tenantId === tenantId)
-  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null)
+  const [invoices, setInvoices] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [selectedInvoice, setSelectedInvoice] = useState<any | null>(null)
+
+  useEffect(() => {
+    if (user?.id) {
+      fetchInvoices()
+    }
+  }, [user?.id])
+
+  async function fetchInvoices() {
+    try {
+      setLoading(true)
+      const data = await api.invoices.list({ tenantId: Number(user?.id) })
+      setInvoices(data)
+      setError(null)
+    } catch (err: any) {
+      console.error("Invoices fetch error:", err)
+      setError("Failed to load invoices.")
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const statusBadge = (status: string) => {
-    switch (status) {
+    switch (status?.toLowerCase()) {
       case "paid": return <Badge className="bg-success text-success-foreground">Paid</Badge>
       case "pending": return <Badge className="bg-warning text-warning-foreground">Pending</Badge>
       case "overdue": return <Badge variant="destructive">Overdue</Badge>
@@ -25,9 +44,26 @@ export function TenantInvoices() {
     }
   }
 
+  if (loading && invoices.length === 0) {
+    return (
+      <div className="flex h-[400px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2 text-muted-foreground">Loading invoices...</span>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
-      <p className="text-sm text-muted-foreground">{invoices.length} invoices</p>
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">{invoices.length} invoices</p>
+        {error && (
+          <Button variant="outline" size="sm" onClick={fetchInvoices} className="text-destructive h-8">
+            <AlertCircle className="mr-2 h-4 w-4" />
+            Retry
+          </Button>
+        )}
+      </div>
 
       <div className="space-y-3">
         {invoices.map((inv) => (
@@ -39,17 +75,17 @@ export function TenantInvoices() {
                 </div>
                 <div>
                   <h3 className="font-semibold text-foreground">{inv.month}</h3>
-                  <p className="text-sm text-muted-foreground">Room {inv.roomNumber} | Due: {inv.dueDate}</p>
+                  <p className="text-sm text-muted-foreground">Room {inv.room_number || "N/A"} | Due: {inv.due_date ? new Date(inv.due_date).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "N/A"}</p>
                 </div>
               </div>
               <div className="flex items-center gap-4">
-                <span className="text-lg font-bold text-foreground">{"Rs."}{inv.total.toLocaleString()}</span>
+                <span className="text-lg font-bold text-foreground">{"Rs."}{(inv.total || 0).toLocaleString()}</span>
                 {statusBadge(inv.status)}
               </div>
             </CardContent>
           </Card>
         ))}
-        {invoices.length === 0 && (
+        {!loading && invoices.length === 0 && (
           <div className="rounded-lg border border-dashed border-border p-12 text-center">
             <FileText className="mx-auto h-8 w-8 text-muted-foreground" />
             <p className="mt-2 text-sm text-muted-foreground">No invoices found</p>
@@ -69,37 +105,37 @@ export function TenantInvoices() {
           {selectedInvoice && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <p className="text-sm text-muted-foreground">Room {selectedInvoice.roomNumber}</p>
+                <p className="text-sm text-muted-foreground">Room {selectedInvoice.room_number || "N/A"}</p>
                 {statusBadge(selectedInvoice.status)}
               </div>
               <Separator />
               <div className="space-y-2">
                 {[
-                  { label: "Rent", amount: selectedInvoice.rentAmount },
+                  { label: "Rent", amount: selectedInvoice.rent_amount },
                   { label: "Electricity", amount: selectedInvoice.electricity },
                   { label: "Water", amount: selectedInvoice.water },
                   { label: "Maintenance", amount: selectedInvoice.maintenance },
                 ].map((item) => (
                   <div key={item.label} className="flex justify-between text-sm">
                     <span className="text-muted-foreground">{item.label}</span>
-                    <span className="text-foreground">{"Rs."}{item.amount.toLocaleString()}</span>
+                    <span className="text-foreground">{"Rs."}{(item.amount || 0).toLocaleString()}</span>
                   </div>
                 ))}
                 <Separator />
                 <div className="flex justify-between font-semibold">
                   <span className="text-foreground">Total</span>
-                  <span className="text-foreground">{"Rs."}{selectedInvoice.total.toLocaleString()}</span>
+                  <span className="text-foreground">{"Rs."}{(selectedInvoice.total || 0).toLocaleString()}</span>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div className="rounded-lg bg-secondary p-3">
                   <p className="text-xs text-muted-foreground">Due Date</p>
-                  <p className="font-medium text-foreground">{selectedInvoice.dueDate}</p>
+                  <p className="font-medium text-foreground">{selectedInvoice.due_date ? new Date(selectedInvoice.due_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "N/A"}</p>
                 </div>
-                {selectedInvoice.paidDate && (
+                {selectedInvoice.paid_date && (
                   <div className="rounded-lg bg-secondary p-3">
                     <p className="text-xs text-muted-foreground">Paid Date</p>
-                    <p className="font-medium text-foreground">{selectedInvoice.paidDate}</p>
+                    <p className="font-medium text-foreground">{new Date(selectedInvoice.paid_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</p>
                   </div>
                 )}
               </div>

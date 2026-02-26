@@ -1,8 +1,6 @@
-"use client"
-
-import { useState } from "react"
-import { mockTenants, mockRooms, type Tenant } from "@/lib/mock-data"
-import { Users, Search, Plus, Eye, X, User, Phone, Mail, Calendar, Home, CreditCard } from "lucide-react"
+import { useState, useEffect } from "react"
+import { api } from "@/lib/api"
+import { Users, Search, Plus, Eye, User, Phone, Mail, Calendar, Home, CreditCard, Loader2, AlertCircle } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -10,26 +8,83 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { toast } from "sonner"
 
 export function AdminTenants() {
+  const [tenants, setTenants] = useState<any[]>([])
+  const [rooms, setRooms] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState("")
-  const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null)
+  const [selectedTenant, setSelectedTenant] = useState<any | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+
   const [newTenant, setNewTenant] = useState({
-    name: "", email: "", phone: "", roomId: "", stayType: "monthly" as "monthly" | "daily",
-    emergencyContact: "", idProof: "",
+    name: "", email: "", phone: "", room_id: "", stay_type: "monthly",
+    emergency_contact: "", id_proof: "",
   })
 
-  const filteredTenants = mockTenants.filter((t) =>
+  useEffect(() => {
+    fetchData()
+  }, [])
+
+  async function fetchData() {
+    try {
+      setLoading(true)
+      const [tenantsData, roomsData] = await Promise.all([
+        api.tenants.list(),
+        api.rooms.list()
+      ])
+      setTenants(tenantsData)
+      setRooms(roomsData)
+      setError(null)
+    } catch (err: any) {
+      console.error("Tenants fetch error:", err)
+      setError("Failed to load tenants. Please check if the backend is running.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const filteredTenants = tenants.filter((t) =>
     t.name.toLowerCase().includes(search.toLowerCase()) ||
-    t.tenantId.toLowerCase().includes(search.toLowerCase()) ||
-    t.roomNumber.includes(search)
+    t.tenant_id?.toLowerCase().includes(search.toLowerCase()) ||
+    t.room_number?.includes(search)
   )
 
-  const handleAddTenant = (e: React.FormEvent) => {
+  const handleAddTenant = async (e: React.FormEvent) => {
     e.preventDefault()
-    setShowAddForm(false)
-    setNewTenant({ name: "", email: "", phone: "", roomId: "", stayType: "monthly", emergencyContact: "", idProof: "" })
+    if (!newTenant.room_id) {
+      toast.error("Please select a room")
+      return
+    }
+
+    try {
+      setSubmitting(true)
+      await api.tenants.create({
+        ...newTenant,
+        room_id: parseInt(newTenant.room_id),
+        status: "active"
+      })
+      toast.success("Tenant onboarded successfully")
+      setShowAddForm(false)
+      setNewTenant({ name: "", email: "", phone: "", room_id: "", stay_type: "monthly", emergency_contact: "", id_proof: "" })
+      fetchData() // Refresh list
+    } catch (err: any) {
+      toast.error(err.message || "Failed to create tenant")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (loading && tenants.length === 0) {
+    return (
+      <div className="flex h-[400px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2 text-muted-foreground">Loading tenants...</span>
+      </div>
+    )
   }
 
   return (
@@ -72,20 +127,23 @@ export function AdminTenants() {
                 </div>
                 <div className="space-y-2">
                   <Label>Room</Label>
-                  <Select value={newTenant.roomId} onValueChange={(v) => setNewTenant({ ...newTenant, roomId: v })}>
+                  <Select value={newTenant.room_id} onValueChange={(v) => setNewTenant({ ...newTenant, room_id: v })}>
                     <SelectTrigger><SelectValue placeholder="Select Room" /></SelectTrigger>
                     <SelectContent>
-                      {mockRooms.filter((r) => r.status === "available").map((r) => (
-                        <SelectItem key={r.id} value={r.id}>
-                          {r.roomNumber} - {r.pgName}
+                      {rooms.filter(r => r.status === "available").map((r) => (
+                        <SelectItem key={r.id} value={r.id.toString()}>
+                          {r.room_number} - {r.pg_name}
                         </SelectItem>
                       ))}
+                      {rooms.filter(r => r.status === "available").length === 0 && (
+                        <SelectItem value="none" disabled>No available rooms</SelectItem>
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
                   <Label>Stay Type</Label>
-                  <Select value={newTenant.stayType} onValueChange={(v) => setNewTenant({ ...newTenant, stayType: v as "monthly" | "daily" })}>
+                  <Select value={newTenant.stay_type} onValueChange={(v) => setNewTenant({ ...newTenant, stay_type: v })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="monthly">Monthly</SelectItem>
@@ -95,21 +153,34 @@ export function AdminTenants() {
                 </div>
                 <div className="space-y-2">
                   <Label>Emergency Contact</Label>
-                  <Input value={newTenant.emergencyContact} onChange={(e) => setNewTenant({ ...newTenant, emergencyContact: e.target.value })} required />
+                  <Input value={newTenant.emergency_contact} onChange={(e) => setNewTenant({ ...newTenant, emergency_contact: e.target.value })} required />
                 </div>
               </div>
               <div className="space-y-2">
                 <Label>ID Proof</Label>
-                <Input placeholder="e.g., Aadhaar - XXXX-XXXX-1234" value={newTenant.idProof} onChange={(e) => setNewTenant({ ...newTenant, idProof: e.target.value })} required />
+                <Input placeholder="e.g., Aadhaar - XXXX-XXXX-1234" value={newTenant.id_proof} onChange={(e) => setNewTenant({ ...newTenant, id_proof: e.target.value })} required />
               </div>
               <div className="flex justify-end gap-3">
-                <Button variant="outline" type="button" onClick={() => setShowAddForm(false)}>Cancel</Button>
-                <Button type="submit">Create Tenant</Button>
+                <Button variant="outline" type="button" onClick={() => setShowAddForm(false)} disabled={submitting}>Cancel</Button>
+                <Button type="submit" disabled={submitting}>
+                  {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  Create Tenant
+                </Button>
               </div>
             </form>
           </DialogContent>
         </Dialog>
       </div>
+
+      {error && (
+        <Card className="border-destructive/50 bg-destructive/5">
+          <CardContent className="flex items-center gap-3 p-4 text-destructive">
+            <AlertCircle className="h-5 w-5" />
+            <p>{error}</p>
+            <Button variant="outline" size="sm" onClick={fetchData} className="ml-auto">Retry</Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Tenant List */}
       <div className="space-y-3">
@@ -128,16 +199,16 @@ export function AdminTenants() {
                     </Badge>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    {tenant.tenantId} | Room {tenant.roomNumber} | {tenant.pgName}
+                    {tenant.tenant_id} | Room {tenant.room_number || "N/A"} | {tenant.pg_name || "N/A"}
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <Badge variant="outline" className="capitalize">{tenant.stayType}</Badge>
+                <Badge variant="outline" className="capitalize">{tenant.stay_type}</Badge>
                 <span className="text-sm font-semibold text-foreground">
-                  {"Rs."}{tenant.rentAmount.toLocaleString()}
+                  {"Rs."}{tenant.rent_amount?.toLocaleString() || "0"}
                   <span className="font-normal text-muted-foreground">
-                    /{tenant.stayType === "monthly" ? "mo" : "day"}
+                    /{tenant.stay_type === "monthly" ? "mo" : "day"}
                   </span>
                 </span>
                 <Button variant="ghost" size="sm" onClick={() => setSelectedTenant(tenant)} className="gap-1">
@@ -148,7 +219,7 @@ export function AdminTenants() {
             </CardContent>
           </Card>
         ))}
-        {filteredTenants.length === 0 && (
+        {!loading && filteredTenants.length === 0 && (
           <div className="rounded-lg border border-dashed border-border p-12 text-center">
             <Users className="mx-auto h-8 w-8 text-muted-foreground" />
             <p className="mt-2 text-sm text-muted-foreground">No tenants found</p>
@@ -170,19 +241,19 @@ export function AdminTenants() {
                 </div>
                 <div>
                   <h3 className="text-lg font-semibold text-foreground">{selectedTenant.name}</h3>
-                  <p className="text-sm text-muted-foreground">{selectedTenant.tenantId}</p>
+                  <p className="text-sm text-muted-foreground">{selectedTenant.tenant_id}</p>
                 </div>
               </div>
               <div className="grid grid-cols-1 gap-3">
                 {[
                   { icon: Mail, label: "Email", value: selectedTenant.email },
                   { icon: Phone, label: "Phone", value: selectedTenant.phone },
-                  { icon: Home, label: "Room", value: `${selectedTenant.roomNumber} - ${selectedTenant.pgName}` },
-                  { icon: Calendar, label: "Join Date", value: selectedTenant.joinDate },
-                  { icon: CreditCard, label: "Rent", value: `Rs.${selectedTenant.rentAmount.toLocaleString()} (${selectedTenant.stayType})` },
-                  { icon: CreditCard, label: "Security Deposit", value: `Rs.${selectedTenant.securityDeposit.toLocaleString()}` },
-                  { icon: Phone, label: "Emergency", value: selectedTenant.emergencyContact },
-                  { icon: User, label: "ID Proof", value: selectedTenant.idProof },
+                  { icon: Home, label: "Room", value: `${selectedTenant.room_number || "N/A"} - ${selectedTenant.pg_name || "N/A"}` },
+                  { icon: Calendar, label: "Join Date", value: selectedTenant.join_date ? new Date(selectedTenant.join_date).toLocaleDateString() : "N/A" },
+                  { icon: CreditCard, label: "Rent", value: `Rs.${selectedTenant.rent_amount?.toLocaleString() || "0"} (${selectedTenant.stay_type})` },
+                  { icon: CreditCard, label: "Security Deposit", value: `Rs.${selectedTenant.security_deposit?.toLocaleString() || "0"}` },
+                  { icon: Phone, label: "Emergency", value: selectedTenant.emergency_contact },
+                  { icon: User, label: "ID Proof", value: selectedTenant.id_proof },
                 ].map((item) => (
                   <div key={item.label} className="flex items-center gap-3 rounded-lg bg-secondary p-3">
                     <item.icon className="h-4 w-4 shrink-0 text-muted-foreground" />

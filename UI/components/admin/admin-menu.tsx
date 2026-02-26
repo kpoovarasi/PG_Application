@@ -1,35 +1,87 @@
-"use client"
-
-import { useState } from "react"
-import { mockMenu, type MenuItem } from "@/lib/mock-data"
-import { UtensilsCrossed, Edit2, Save, X } from "lucide-react"
+import { useState, useEffect } from "react"
+import { api } from "@/lib/api"
+import { UtensilsCrossed, Edit2, Save, X, Loader2, AlertCircle } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { toast } from "sonner"
 
 export function AdminMenu() {
-  const [menu, setMenu] = useState<MenuItem[]>(mockMenu)
+  const [menu, setMenu] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [editingDay, setEditingDay] = useState<string | null>(null)
-  const [editForm, setEditForm] = useState<MenuItem | null>(null)
+  const [editForm, setEditForm] = useState<any | null>(null)
+  const [saving, setSaving] = useState(false)
 
-  const startEdit = (item: MenuItem) => {
+  useEffect(() => {
+    fetchMenu()
+  }, [])
+
+  async function fetchMenu() {
+    try {
+      setLoading(true)
+      const data = await api.menu.all()
+      setMenu(data)
+      setError(null)
+    } catch (err: any) {
+      console.error("Menu fetch error:", err)
+      setError("Failed to load menu data.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const startEdit = (item: any) => {
     setEditingDay(item.day)
     setEditForm({ ...item })
   }
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!editForm) return
-    setMenu(menu.map((m) => (m.day === editForm.day ? editForm : m)))
-    setEditingDay(null)
-    setEditForm(null)
+    try {
+      setSaving(true)
+      await api.menu.update(editForm.day, {
+        breakfast: editForm.breakfast,
+        lunch: editForm.lunch,
+        dinner: editForm.dinner
+      })
+      toast.success(`${editForm.day} menu updated`)
+      setMenu(menu.map((m) => (m.day === editForm.day ? editForm : m)))
+      setEditingDay(null)
+      setEditForm(null)
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update menu")
+    } finally {
+      setSaving(false)
+    }
   }
 
   const today = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][new Date().getDay()]
 
+  if (loading && menu.length === 0) {
+    return (
+      <div className="flex h-[400px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2 text-muted-foreground">Loading menu...</span>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       <p className="text-sm text-muted-foreground">Manage the weekly food menu for all PGs</p>
+
+      {error && (
+        <Card className="border-destructive/50 bg-destructive/5">
+          <CardContent className="flex items-center gap-3 p-4 text-destructive">
+            <AlertCircle className="h-5 w-5" />
+            <p>{error}</p>
+            <Button variant="outline" size="sm" onClick={fetchMenu} className="ml-auto">Retry</Button>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="space-y-3">
         {menu.map((item) => {
@@ -47,11 +99,11 @@ export function AdminMenu() {
                   </div>
                   {isEditing ? (
                     <div className="flex gap-2">
-                      <Button size="sm" variant="ghost" onClick={() => { setEditingDay(null); setEditForm(null) }}>
+                      <Button size="sm" variant="ghost" onClick={() => { setEditingDay(null); setEditForm(null) }} disabled={saving}>
                         <X className="h-3.5 w-3.5" />
                       </Button>
-                      <Button size="sm" onClick={saveEdit} className="gap-1">
-                        <Save className="h-3.5 w-3.5" />
+                      <Button size="sm" onClick={saveEdit} className="gap-1" disabled={saving}>
+                        {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
                         Save
                       </Button>
                     </div>

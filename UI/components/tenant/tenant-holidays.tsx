@@ -1,17 +1,52 @@
-"use client"
-
-import { mockHolidays } from "@/lib/mock-data"
+import { useState, useEffect } from "react"
+import { api } from "@/lib/api"
+import { CalendarDays, Loader2, AlertCircle } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 
 export function TenantHolidays() {
+  const [holidays, setHolidays] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetchHolidays()
+  }, [])
+
+  async function fetchHolidays() {
+    try {
+      setLoading(true)
+      const data = await api.holidays.list()
+      setHolidays(data.sort((a: any, b: any) => a.date.localeCompare(b.date)))
+      setError(null)
+    } catch (err: any) {
+      console.error("Holidays fetch error:", err)
+      setError("Failed to load holidays.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const today = new Date().toISOString().split("T")[0]
+
+  if (loading && holidays.length === 0) {
+    return (
+      <div className="flex h-[400px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2 text-muted-foreground">Loading holidays...</span>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-muted-foreground">Upcoming holidays and important dates</p>
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">Upcoming holidays and important dates</p>
+        {error && <Button variant="ghost" size="sm" onClick={fetchHolidays} className="text-destructive">Retry</Button>}
+      </div>
       <div className="space-y-3">
-        {mockHolidays.map((holiday) => {
+        {holidays.map((holiday) => {
           const isPast = holiday.date < today
           const dateObj = new Date(holiday.date + "T00:00:00")
           return (
@@ -37,6 +72,12 @@ export function TenantHolidays() {
             </Card>
           )
         })}
+        {!loading && holidays.length === 0 && (
+          <div className="rounded-lg border border-dashed border-border p-12 text-center">
+            <CalendarDays className="mx-auto h-8 w-8 text-muted-foreground" />
+            <p className="mt-2 text-sm text-muted-foreground">No holidays found</p>
+          </div>
+        )}
       </div>
     </div>
   )

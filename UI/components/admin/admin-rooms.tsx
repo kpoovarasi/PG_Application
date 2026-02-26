@@ -1,8 +1,6 @@
-"use client"
-
-import { useState } from "react"
-import { mockRooms, commonAssets, type Room } from "@/lib/mock-data"
-import { BedDouble, Filter, Eye, X, Package, Snowflake, Fan } from "lucide-react"
+import { useState, useEffect } from "react"
+import { api } from "@/lib/api"
+import { BedDouble, Filter, Eye, Package, Snowflake, Fan, Loader2, AlertCircle } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -11,11 +9,53 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 export function AdminRooms() {
+  const [rooms, setRooms] = useState<any[]>([])
+  const [commonAssets, setCommonAssets] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [typeFilter, setTypeFilter] = useState<string>("all")
   const [statusFilter, setStatusFilter] = useState<string>("all")
-  const [selectedRoom, setSelectedRoom] = useState<Room | null>(null)
+  const [selectedRoom, setSelectedRoom] = useState<any | null>(null)
+  const [roomAssets, setRoomAssets] = useState<any[]>([])
+  const [loadingAssets, setLoadingAssets] = useState(false)
 
-  const filteredRooms = mockRooms.filter((room) => {
+  useEffect(() => {
+    fetchData()
+  }, [])
+
+  async function fetchData() {
+    try {
+      setLoading(true)
+      const [roomsData, commonAssetsData] = await Promise.all([
+        api.rooms.list(),
+        api.rooms.commonAssets()
+      ])
+      setRooms(roomsData)
+      setCommonAssets(commonAssetsData)
+      setError(null)
+    } catch (err: any) {
+      console.error("Rooms fetch error:", err)
+      setError("Failed to load rooms data.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSelectRoom = async (room: any) => {
+    setSelectedRoom(room)
+    setRoomAssets([])
+    try {
+      setLoadingAssets(true)
+      const assets = await api.rooms.assets(room.id)
+      setRoomAssets(assets)
+    } catch (err) {
+      console.error("Failed to load room assets:", err)
+    } finally {
+      setLoadingAssets(false)
+    }
+  }
+
+  const filteredRooms = rooms.filter((room) => {
     if (typeFilter !== "all" && room.type !== typeFilter) return false
     if (statusFilter !== "all" && room.status !== statusFilter) return false
     return true
@@ -39,6 +79,15 @@ export function AdminRooms() {
     }
   }
 
+  if (loading && rooms.length === 0) {
+    return (
+      <div className="flex h-[400px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2 text-muted-foreground">Loading rooms...</span>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       <Tabs defaultValue="rooms">
@@ -48,6 +97,16 @@ export function AdminRooms() {
         </TabsList>
 
         <TabsContent value="rooms" className="space-y-4 mt-4">
+          {error && (
+            <Card className="border-destructive/50 bg-destructive/5">
+              <CardContent className="flex items-center gap-3 p-4 text-destructive">
+                <AlertCircle className="h-5 w-5" />
+                <p>{error}</p>
+                <Button variant="outline" size="sm" onClick={fetchData} className="ml-auto">Retry</Button>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Filters */}
           <div className="flex flex-wrap items-center gap-3">
             <Filter className="h-4 w-4 text-muted-foreground" />
@@ -85,13 +144,13 @@ export function AdminRooms() {
                   <div className="mb-3 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <BedDouble className="h-5 w-5 text-primary" />
-                      <span className="font-semibold text-foreground">Room {room.roomNumber}</span>
+                      <span className="font-semibold text-foreground">Room {room.room_number}</span>
                     </div>
                     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${statusColor(room.status)}`}>
                       {room.status}
                     </span>
                   </div>
-                  <p className="mb-2 text-sm text-muted-foreground">{room.pgName}</p>
+                  <p className="mb-2 text-sm text-muted-foreground">{room.pg_name}</p>
                   <div className="mb-3 flex flex-wrap gap-2">
                     <Badge variant="outline" className="gap-1">
                       {room.type === "AC" ? <Snowflake className="h-3 w-3" /> : <Fan className="h-3 w-3" />}
@@ -102,10 +161,10 @@ export function AdminRooms() {
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-lg font-bold text-foreground">
-                      {"Rs."}{room.rent.toLocaleString()}
+                      {"Rs."}{room.rent?.toLocaleString() || "0"}
                       <span className="text-xs font-normal text-muted-foreground">/mo</span>
                     </span>
-                    <Button variant="ghost" size="sm" onClick={() => setSelectedRoom(room)} className="gap-1">
+                    <Button variant="ghost" size="sm" onClick={() => handleSelectRoom(room)} className="gap-1">
                       <Eye className="h-3.5 w-3.5" />
                       View
                     </Button>
@@ -113,6 +172,12 @@ export function AdminRooms() {
                 </CardContent>
               </Card>
             ))}
+            {!loading && filteredRooms.length === 0 && (
+              <div className="col-span-full rounded-lg border border-dashed border-border p-12 text-center">
+                <BedDouble className="mx-auto h-8 w-8 text-muted-foreground" />
+                <p className="mt-2 text-sm text-muted-foreground">No rooms found matching filters</p>
+              </div>
+            )}
           </div>
         </TabsContent>
 
@@ -134,6 +199,9 @@ export function AdminRooms() {
                     </Badge>
                   </div>
                 ))}
+                {commonAssets.length === 0 && (
+                  <p className="text-center text-sm text-muted-foreground py-8">No common assets listed.</p>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -146,7 +214,7 @@ export function AdminRooms() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <BedDouble className="h-5 w-5 text-primary" />
-              Room {selectedRoom?.roomNumber} Details
+              Room {selectedRoom?.room_number} Details
             </DialogTitle>
           </DialogHeader>
           {selectedRoom && (
@@ -154,7 +222,7 @@ export function AdminRooms() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-lg bg-secondary p-3">
                   <p className="text-xs text-muted-foreground">PG Name</p>
-                  <p className="text-sm font-medium text-foreground">{selectedRoom.pgName}</p>
+                  <p className="text-sm font-medium text-foreground">{selectedRoom.pg_name}</p>
                 </div>
                 <div className="rounded-lg bg-secondary p-3">
                   <p className="text-xs text-muted-foreground">Type</p>
@@ -170,7 +238,7 @@ export function AdminRooms() {
                 </div>
                 <div className="rounded-lg bg-secondary p-3">
                   <p className="text-xs text-muted-foreground">Rent</p>
-                  <p className="text-sm font-medium text-foreground">{"Rs."}{selectedRoom.rent.toLocaleString()}</p>
+                  <p className="text-sm font-medium text-foreground">{"Rs."}{selectedRoom.rent?.toLocaleString() || "0"}</p>
                 </div>
                 <div className="rounded-lg bg-secondary p-3">
                   <p className="text-xs text-muted-foreground">Status</p>
@@ -180,14 +248,23 @@ export function AdminRooms() {
               <div>
                 <h4 className="mb-2 text-sm font-semibold text-foreground">Room Assets</h4>
                 <div className="space-y-2">
-                  {selectedRoom.assets.map((asset) => (
-                    <div key={asset.id} className="flex items-center justify-between rounded-lg border border-border p-2.5">
-                      <span className="text-sm text-foreground">{asset.name}</span>
-                      <Badge variant={conditionColor(asset.condition)} className="text-xs">
-                        {asset.condition}
-                      </Badge>
+                  {loadingAssets ? (
+                    <div className="flex items-center justify-center py-4">
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground mr-2" />
+                      <span className="text-xs text-muted-foreground">Loading assets...</span>
                     </div>
-                  ))}
+                  ) : roomAssets.length > 0 ? (
+                    roomAssets.map((asset) => (
+                      <div key={asset.id} className="flex items-center justify-between rounded-lg border border-border p-2.5">
+                        <span className="text-sm text-foreground">{asset.name}</span>
+                        <Badge variant={conditionColor(asset.condition)} className="text-xs">
+                          {asset.condition}
+                        </Badge>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-center text-xs text-muted-foreground py-2 italic">No specific assets assigned to this room.</p>
+                  )}
                 </div>
               </div>
             </div>

@@ -1,13 +1,12 @@
-"use client"
-
 import { useState } from "react"
 import { useAuth } from "@/lib/auth-context"
-import type { Role } from "@/lib/mock-data"
-import { Building2, User, Lock, Mail, ArrowRight } from "lucide-react"
+import { Building2, User, Lock, Mail, ArrowRight, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+
+type Role = "admin" | "tenant"
 
 export function LoginPage() {
   const { login } = useAuth()
@@ -15,13 +14,20 @@ export function LoginPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
+  const [loading, setLoading] = useState(false)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
-    const success = login(email, password, role)
-    if (!success) {
-      setError("Invalid credentials. Please try again.")
+    setLoading(true)
+    try {
+      await login(email, password)
+      // Redirect happens automatically as AuthProvider state changes and layout switches
+    } catch (err: any) {
+      console.error("Login component error:", err)
+      setError(err.message || "Invalid credentials. Please try again.")
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -56,11 +62,11 @@ export function LoginPage() {
               <button
                 type="button"
                 onClick={() => presetCredentials("admin")}
-                className={`flex flex-col items-center gap-2 rounded-lg border-2 p-4 transition-all ${
-                  role === "admin"
+                className={`flex flex-col items-center gap-2 rounded-lg border-2 p-4 transition-all ${role === "admin"
                     ? "border-primary bg-primary/5 text-primary"
                     : "border-border bg-card text-muted-foreground hover:border-primary/40"
-                }`}
+                  }`}
+                disabled={loading}
               >
                 <Building2 className="h-6 w-6" />
                 <span className="text-sm font-medium">Admin</span>
@@ -68,11 +74,11 @@ export function LoginPage() {
               <button
                 type="button"
                 onClick={() => presetCredentials("tenant")}
-                className={`flex flex-col items-center gap-2 rounded-lg border-2 p-4 transition-all ${
-                  role === "tenant"
+                className={`flex flex-col items-center gap-2 rounded-lg border-2 p-4 transition-all ${role === "tenant"
                     ? "border-primary bg-primary/5 text-primary"
                     : "border-border bg-card text-muted-foreground hover:border-primary/40"
-                }`}
+                  }`}
+                disabled={loading}
               >
                 <User className="h-6 w-6" />
                 <span className="text-sm font-medium">Tenant</span>
@@ -92,6 +98,7 @@ export function LoginPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
+                    disabled={loading}
                   />
                 </div>
               </div>
@@ -107,6 +114,7 @@ export function LoginPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
+                    disabled={loading}
                   />
                 </div>
               </div>
@@ -115,9 +123,13 @@ export function LoginPage() {
                 <p className="text-sm text-destructive">{error}</p>
               )}
 
-              <Button type="submit" className="w-full gap-2">
-                Sign In as {role === "admin" ? "Admin" : "Tenant"}
-                <ArrowRight className="h-4 w-4" />
+              <Button type="submit" className="w-full gap-2" disabled={loading}>
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : (
+                  <>
+                    Sign In as {role === "admin" ? "Admin" : "Tenant"}
+                    <ArrowRight className="h-4 w-4" />
+                  </>
+                )}
               </Button>
             </form>
 
